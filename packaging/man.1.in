@@ -1,0 +1,34 @@
+.TH @BINARY@ 1 "@DATE_SHORT@" "@NAME@ @VERSION@" "User Commands"
+.SH NAME
+@BINARY@ \- @DESCRIPTION@
+.SH SYNOPSIS
+.B @BINARY@
+[\fB\-\-kiosk\fR]
+.SH DESCRIPTION
+@LONG_DESCRIPTION@
+.SH OPTIONS
+.TP
+.B \-\-kiosk
+Kiosk mode: fullscreen, a status bar and an on screen keyboard.
+.TP
+.B \-\-print\-config
+Print the configuration built into this binary.
+.TP
+.B \-\-meta
+Print the package name, version and description.
+.TP
+.BI \-\-write\-icon " FILE"
+Write the built in icon to FILE.
+.TP
+.B \-\-version
+Print the version.
+.TP
+.B \-\-help
+Print the options.
+.SH FILES
+.TP
+.I ~/.config/@ID@/
+The remembered setup, trusted server keys and, with the unsafe credential
+store, passwords.
+.SH SEE ALSO
+Built with tacoshell.

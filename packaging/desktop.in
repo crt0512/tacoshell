@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=@NAME@
+Comment=@DESCRIPTION@
+Exec=@BINARY@
+Icon=@ICON_NAME@
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupWMClass=@ID@
+Actions=kiosk;
+
+[Desktop Action kiosk]
+Name=Kiosk mode
+Exec=@BINARY@ --kiosk

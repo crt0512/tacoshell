@@ -1,0 +1,10 @@
+Package: @BINARY@
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: @MAINTAINER@
+Installed-Size: @INSTALLED_SIZE@
+Depends: @DEPENDS_ALL@
+Homepage: @HOMEPAGE@
+Description: @DESCRIPTION@

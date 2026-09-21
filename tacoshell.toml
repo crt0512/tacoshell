@@ -1,0 +1,206 @@
+# tacoshell config. everything the app is and puts on screen comes from here,
+# build.rs bakes it into the binary at build time.
+#
+#   make CONFIG=path/to/yours.toml          (or TACOSHELL_CONFIG=... if you want to use cargo build)
+#
+
+# ----------------------------------------------------------------------------
+# The Basics
+# ----------------------------------------------------------------------------
+[app]
+name = "tacoshell-local-demo"               # window title, name in app menus and the dock
+id = "net.512mb.tacoshell-local-demo"       # reverse dns. names the settings folder (~/.config/<id>/), the desktop entry and the macos bundle
+binary = "tacoshell"                        # what `make install` names the installed binary
+version = "1.0.0"                           # your app's version: package, --version, default: the version of tacoshell it was built with
+description = "A taco wrap for TUI apps"    # I think i dont have to explain this one.
+# icon = "assets/icon.png"                  # png, relative to this file. baked in, used for the window, the desktop entry and the macos .icns
+
+# ----------------------------------------------------------------------------
+# Things for installation packages
+# ----------------------------------------------------------------------------
+[packaging]
+# maintainer = "Jane Doe <jane@example.com>"# You ... please use this kinda formatting otherwise deb wont be happy
+# license = "MIT"                           # your app's license, SPDX name, goes into the copyright file. default: unknown
+# homepage = "https://example.com"          # your sexy homepage
+# long_description = "Bla Bla Lorem Ipsum"  # default: generated from app.name and what gets wrapped
+
+# ----------------------------------------------------------------------------
+# How you want the terminal to look
+# ----------------------------------------------------------------------------
+[terminal]
+# font_size = 14.0
+# cols = 120                                # starting window size in cells, resizable after
+# rows = 35
+# foreground = "#cccccc"                  # default text color, #rrggbb
+# background = "#181818"                  # default background color
+# term = "xterm-256color"                   # TERM the wrapped app gets
+
+# ----------------------------------------------------------------------------
+# What to put in the taco wrapper shell
+# ----------------------------------------------------------------------------
+
+# Local program Configuration section 
+# Only one is possible (either local or ssh) not both!
+[local]
+program = "sh"                              # looked for next to our own binary first, then in PATH
+args = ["-l"]
+# on_exit = "close"                         # when it quits: "close" the window or "restart" it
+# depends = ["htop"]                        # needed debian packages for the app used in `make deb`
+
+# Remote SSH program Configuration section
+# comment out [local] and its stuff to use this
+# [ssh]
+# [ssh]
+# server = "example.com:22"                 # bake a server in ("host", "host:port", "[v6]:port"), default: asks
+# port = 22                                 # when the server has no port of its own lol
+# command = "htop"                          # run this instead of the users login shell. default: login shell
+# shell_toggle = { label = "Login shell", default = true } # For when a users shell isnt the program we care about. Only use if necessary
+# host_keys = ["SHA256:..."]                # pin the servers key fingerprints: nobody gets asked, anything else is refused. default: ask on first connect, remembers in ~/.config/<id>/known_hosts
+# accept_new_host_keys = false              # true: trust a server we've never seen without asking, and remember it. a key that changes still stops us
+# changed_key_accept = true                 # a server whose key changed gets a big red warning. it has an "accept new key" button (kiosk pin on a kiosk)
+# changed_key_accept_after_secs = 0         # accept the changed key on its own after this long, 0 = never. for kiosks nobody can reach, not recommended otherwise.                            
+# retry_button = true                       # "retry now" on the lost, interrupted and changed key screens for impatient people
+# logout_button = true                      # "logout" on those screens (kiosk pin on a kiosk)
+# connect_timeout_secs = 10
+# keepalive_secs = 5                        # poke the server after this much silence
+# keepalive_max = 3                         # this many unanswered pokes = connection interrupted
+# resume_every_secs = 3                     # retry interval while the server cant be reached
+# reinit_after_secs = 5                     # countdown before reinitializing a killed session
+# on_exit = "close"                         # the app quit with status 0: "close" the window,
+                                            # "reinitialize" a new session, or back to "login"
+# credentials = "memory"                    # where the password lives: memory is in ram only, unsafe is stored on disk in base64x2
+# unsafe_warning = true                     # if you really have to use unsafe in prod and want to get rid of the warning set this to false (compiler will still complain though)
+
+# ----------------------------------------------------------------------------
+# How you want the login screen to look
+# ----------------------------------------------------------------------------
+[login]
+# logo = """
+#
+#
+# Insert your ASCII art logo to show on the login screen here
+# If it breaks the toml or doesnt show up correctly use the logo_file option instead
+# 
+#
+# """                                       # ascii art above the form. default: none
+# logo_file = "logo.txt"                    # or read it from a file, relative to this one
+# logo_color = "#e5a50a"                  # default: the terminal foreground
+# title = ""                                # a line under the logo
+# remember_server_checkbox = true           # "remember server" checkbox (never shown when the server is baked in). false: no checkbox, always remembered
+# remember_username_checkbox = true         # "remember username" checkbox
+
+# ----------------------------------------------------------------------------
+# How you want the menu to open
+# ----------------------------------------------------------------------------
+[menu]
+# open_on = "right_click"                   # "right_click": the tui app never sees right clicks
+                                            # "shift_right_click": right clicks go to the app, shift + right click opens the menu
+
+# ----------------------------------------------------------------------------
+# Special Stuff for kiosk setups
+# ----------------------------------------------------------------------------
+[kiosk]
+# enabled = false                  # If true always kiosk. otherwise only when started with --kiosk
+# fullscreen = true                # If kiosk should try and force fullscreen.
+# keyboard_mode = "shrink"         # "shrink": the terminal gets smaller while the keyboard is up
+                                   # "overlay": the keyboard floats over the terminal instead
+# on screen keyboard, one string per row, keys split by spaces. {name} is a special key:
+# esc tab bksp enter shift ctrl space up down left right home end pgup pgdn del ins f1..f12 and so on. anything else types itself
+# keyboard = [
+#     "{esc} 1 2 3 4 5 6 7 8 9 0 - = {bksp}",
+#     "{tab} q w e r t y u i o p [ ] \\",
+#     "{ctrl} a s d f g h j k l ; ' {enter}",
+#     "{shift} z x c v b n m , . / {up} {del}",
+#     "` {space} {left} {down} {right}",
+# ]
+# the same rows with shift on, has to line up key for key with keyboard
+# keyboard_shift = [
+#     "{esc} ! @ # $ % ^ & * ( ) _ + {bksp}",
+#     "{tab} Q W E R T Y U I O P { } |",
+#     "{ctrl} A S D F G H J K L : \" {enter}",
+#     "{shift} Z X C V B N M < > ? {pgup} {del}",
+#     "~ {space} {home} {pgdn} {end}",
+# ]
+
+# ----------------------------------------------------------------------------
+# If you need translations or hate how something is spelled in the UI
+# ----------------------------------------------------------------------------
+[text]
+# login screen
+# server = "Server"
+# username = "Username"
+# password = "Password"
+# kiosk_pin = "Kiosk PIN (optional)"
+# connect = "Connect"
+# connecting = "Connecting to {server}..."
+# missing_server = "Enter a server"
+# missing_username = "Enter a username"
+# bad_pin = "The PIN has to be 4 to 16 digits"
+# unreachable = "Can't reach {server}: {error}"
+# auth_failed = "Wrong username or password"
+# failed = "Connection failed: {error}"
+# remember_server = "Remember server"
+# remember_username = "Remember username"
+# unsafe_credentials = "Passwords are saved unprotected on this device (development build)"
+
+
+# server key question and problems:
+
+# host_key_title = "New server"
+# host_key_body = """
+# This is the first time connecting to {server}.
+# Make sure its key fingerprint is:
+#
+# {fingerprint}"""
+# trust = "Trust"
+# cancel = "Cancel"
+# host_key_declined = "Server not trusted"
+# key_changed_title = "WARNING: THE SERVER'S IDENTITY HAS CHANGED"
+# key_changed_body = """
+# {server} identified itself with a different key than last time.
+# Someone could be listening in on this connection (a man in the middle attack),
+# or the server was reinstalled. Don't continue unless you know which one it is.
+#
+# Known key: {old}
+# New key:   {new}"""
+# key_mismatch_body = """
+# {server} identified itself with a key this app doesn't trust.
+# Someone could be listening in on this connection (a man in the middle attack).
+#
+# Key: {new}"""
+# accept_key = "Accept new key"
+# accept_key_in = "Accepting the new key in {secs}s"
+# pin_to_accept = "Enter PIN to accept the new key"
+
+
+# connection screens:
+
+# interrupted_title = "Connection Interrupted..."
+# interrupted_body = "Trying to resume connection"
+# lost_title = "Connection Lost..."
+# lost_body = "Reinitializing in {secs}s"
+# retry_now = "Retry now"
+# start_failed = "Couldn't start {program}: {error}"
+# program_missing = """
+# Couldn't find {program}.
+# It has to be installed for this app to work."""     # put instructions on how to install your tui app here 
+# retry = "Retry"
+# exit = "Exit"
+
+
+# menu and logout:
+
+# menu_restart = "Restart"
+# menu_reinitialize = "Reinitialize"
+# menu_logout = "Logout"
+# menu_exit = "Exit"                                  # on the login screen
+# logout_title = "Logout?"
+# logout_body = "This forgets the server and login, you'll have to set it up again."
+# logout_confirm = "Logout"
+# pin_title = "Enter PIN"
+# pin_wrong = "Wrong PIN"
+# ok = "OK"
+
+# kiosk status bar
+# kiosk_menu = "Menu"
+# kiosk_keyboard = "Keyboard"
