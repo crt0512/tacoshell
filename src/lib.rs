@@ -8,6 +8,8 @@
 
 mod config;
 mod creds;
+#[cfg(all(target_os = "android", feature = "legacy"))]
+mod legacy;
 mod schema;
 mod session;
 mod state;
@@ -113,6 +115,9 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     if let Err(e) = run(cfg, kiosk, eframe::NativeOptions { android_app: Some(app), ..Default::default() }) {
         log::error!("{e}");
     }
+    // android keeps the process around after the app is closed and starts the next launch in it, but winit only
+    // makes its event loop once per process. so the process goes with the app and the next launch gets a fresh one
+    std::process::exit(0);
 }
 
 fn run(cfg: config::Config, kiosk: bool, options: eframe::NativeOptions) -> eframe::Result<()> {
@@ -125,15 +130,20 @@ fn run(cfg: config::Config, kiosk: bool, options: eframe::NativeOptions) -> efra
 
     let name = cfg.app.name.clone();
     let handle = rt.handle().clone();
-    eframe::run_native(
-        &name,
-        options,
-        Box::new(move |cc| {
-            cc.egui_ctx.set_visuals(egui::Visuals::dark());
-            cc.egui_ctx.set_fonts(fonts());
-            Ok(Box::new(ui::TacoApp::new(cc, cfg, handle, kiosk)))
-        }),
-    )
+    let creator: eframe::AppCreator<'_> = Box::new(move |cc| {
+        cc.egui_ctx.set_visuals(egui::Visuals::dark());
+        cc.egui_ctx.set_fonts(fonts());
+        Ok(Box::new(ui::TacoApp::new(cc, cfg, handle, kiosk)))
+    });
+
+    // android 4 cant do what eframe's renderers need, legacy has a runner of its own
+    #[cfg(all(target_os = "android", feature = "legacy"))]
+    {
+        let _ = name;
+        legacy::run_native(options, creator)
+    }
+    #[cfg(not(all(target_os = "android", feature = "legacy")))]
+    eframe::run_native(&name, options, creator)
 }
 
 fn load_icon(png: &[u8]) -> Option<egui::IconData> {

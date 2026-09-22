@@ -64,6 +64,9 @@ pub struct Packaging {
     /// a few yap lines for package managers. default: app.description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub long_description: Option<String>,
+    /// what the apk is known by on android, for when app.id doesnt work as that. default: app.id with - as _
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub android_package: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +136,8 @@ pub struct Ssh {
     pub changed_key_accept_after_secs: u64,
     pub retry_button: bool,
     pub logout_button: bool,
+    /// logout only forgets the password, the server and username stay (kiosk pin too)
+    pub logout_keeps_setup: bool,
     pub connect_timeout_secs: u64,
     /// after this many seconds of silence we poke the server
     pub keepalive_secs: u64,
@@ -159,6 +164,7 @@ impl Default for Ssh {
             changed_key_accept_after_secs: 0,
             retry_button: true,
             logout_button: true,
+            logout_keeps_setup: false,
             connect_timeout_secs: 10,
             keepalive_secs: 5,
             keepalive_max: 3,
@@ -249,7 +255,8 @@ pub enum MenuTrigger {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Kiosk {
-    /// always kiosk. otherwise only with --kiosk
+    /// always kiosk. otherwise only with --kiosk.
+    /// phones get the status bar and keyboard either way, this adds the pin and the locked login there
     pub enabled: bool,
     pub fullscreen: bool,
     /// shrink the terminal to make room for the keyboard, or put it over the terminal
@@ -385,6 +392,8 @@ pub struct Text {
     pub menu_exit: String,
     pub logout_title: String,
     pub logout_body: String,
+    /// instead of logout_body when logout_keeps_setup is on
+    pub logout_keeps_setup_body: String,
     pub logout_confirm: String,
     pub pin_title: String,
     pub pin_wrong: String,
@@ -443,6 +452,7 @@ impl Default for Text {
             menu_exit: "Exit".into(),
             logout_title: "Logout?".into(),
             logout_body: "This forgets the server and login, you'll have to set it up again.".into(),
+            logout_keeps_setup_body: "This forgets the password, you'll have to log in again.".into(),
             logout_confirm: "Logout".into(),
             pin_title: "Enter PIN".into(),
             pin_wrong: "Wrong PIN".into(),
@@ -486,6 +496,26 @@ pub fn parse_color(s: &str) -> Result<[u8; 3], String> {
 }
 
 impl Config {
+    /// packaging.android_package or app.id with - as _. android wants dot separated parts of letters,
+    /// digits and _ that each start with a letter, and it can never change once the app is out
+    pub fn android_package(&self) -> Result<String, String> {
+        let (name, from) = match &self.packaging.android_package {
+            Some(p) => (p.clone(), "packaging.android_package"),
+            None => (self.app.id.replace('-', "_"), "app.id"),
+        };
+        let part_ok = |p: &str| {
+            p.starts_with(|c: char| c.is_ascii_alphabetic()) && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        };
+        if name.contains('.') && name.split('.').all(part_ok) {
+            Ok(name)
+        } else {
+            Err(format!(
+                "{from} {name:?} doesnt work as an android package name: dot separated parts of letters, digits and _, \
+                 each starting with a letter. set packaging.android_package to one that does"
+            ))
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.app.name.trim().is_empty() {
             return Err("app.name is empty".into());
@@ -510,6 +540,9 @@ impl Config {
         }
         if self.app.description.contains('\n') {
             return Err("app.description is one line, packaging.long_description takes more".into());
+        }
+        if self.packaging.android_package.is_some() {
+            self.android_package()?;
         }
         if let Some(m) = &self.packaging.maintainer {
             let shaped = m.find('<').is_some_and(|i| i > 0 && m.trim_end().ends_with('>') && m.contains('@'));
@@ -627,6 +660,21 @@ mod tests {
     }
 
     #[test]
+    fn android_package() {
+        let pkg = |extra: &str| minimal(&format!("[ssh]\n{extra}")).and_then(|c| c.android_package());
+        assert_eq!(pkg(""), Ok("ch.x".into()));
+        let id = |id: &str| {
+            let cfg: Config = toml::from_str(&format!("[app]\nname = \"x\"\nid = \"{id}\"\n[ssh]\n")).unwrap();
+            cfg.android_package()
+        };
+        assert_eq!(id("net.example.tacoshell-demo"), Ok("net.example.tacoshell_demo".into()));
+        assert!(id("net.512mb.taskologic").is_err());
+        assert!(id("taskologic").is_err());
+        assert_eq!(pkg("[packaging]\nandroid_package = \"net.mb512.taskologic\"\n"), Ok("net.mb512.taskologic".into()));
+        assert!(pkg("[packaging]\nandroid_package = \"net.512mb\"\n").is_err());
+    }
+
+    #[test]
     fn typos_fail() {
         assert!(minimal("[ssh]\nservr = \"x\"\n").is_err());
         assert!(minimal("[ssh]\n[text]\nconect = \"x\"\n").is_err());
@@ -667,6 +715,7 @@ mod tests {
             license: Some("x".into()),
             homepage: Some("x".into()),
             long_description: Some("x".into()),
+            android_package: Some("x".into()),
         };
 
         let value = toml::Value::try_from(&cfg).unwrap();

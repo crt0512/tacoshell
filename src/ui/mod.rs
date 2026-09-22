@@ -135,7 +135,10 @@ pub struct TacoApp {
     host_key: Option<HostKeyQuestion>,
     menu: Option<Menu>,
     dialog: Option<Dialog>,
-    kiosk: Option<kiosk::Kiosk>,
+    /// status bar and on screen keyboard: kiosks, and phones and tablets always
+    bar: Option<kiosk::Kiosk>,
+    /// the pin and the locked login, only a real kiosk gets those
+    kiosk: bool,
     /// unsafe credential store in use and the config wants that said
     unsafe_warning: bool,
     banners: Vec<Banner>,
@@ -147,7 +150,10 @@ impl TacoApp {
         let ctx = cc.egui_ctx.clone();
         let wake: Waker = Arc::new(move || ctx.request_repaint());
 
-        if kiosk {
+        // no keyboard or right click to fall back on on a phone, so the bar and the osk come without kiosk mode.
+        // the pin and the locked login dont, a phone is someones own
+        let touch = kiosk || cfg!(any(target_os = "ios", target_os = "android"));
+        if touch {
             // fingers are fatter than mouse pointers
             cc.egui_ctx.all_styles_mut(|s| {
                 s.spacing.button_padding = egui::vec2(14.0, 10.0);
@@ -195,7 +201,8 @@ impl TacoApp {
             host_key: None,
             menu: None,
             dialog: None,
-            kiosk: kiosk.then(|| kiosk::Kiosk::new(&cfg.kiosk)),
+            bar: touch.then(|| kiosk::Kiosk::new(&cfg.kiosk)),
+            kiosk,
             unsafe_warning,
             banners,
             close: false,
@@ -411,23 +418,30 @@ impl TacoApp {
         }
     }
 
+    /// forgets the password, and unless logout_keeps_setup the server and username with it
     fn logout(&mut self) {
         self.session = None;
         self.forget_password();
-        self.saved = None;
-        self.store.clear();
-        self.form = login::Form::new(&self.cfg, None);
+        if !self.logout_keeps_setup() {
+            self.saved = None;
+            self.store.clear();
+        }
+        self.form = login::Form::new(&self.cfg, self.saved.as_ref());
         self.reset_term();
         self.back_to_login(None);
     }
 
+    fn logout_keeps_setup(&self) -> bool {
+        self.ssh().is_some_and(|s| s.logout_keeps_setup)
+    }
+
     fn pin_field_shown(&self) -> bool {
-        self.kiosk.is_some() && self.saved.is_none()
+        self.kiosk && self.saved.is_none()
     }
 
     /// the kiosk pin, if we're a kiosk and one was set
     fn kiosk_pin(&self) -> Option<String> {
-        self.kiosk.as_ref().and(self.saved.as_ref()).and_then(|s| s.kiosk_pin.clone())
+        self.saved.as_ref().filter(|_| self.kiosk).and_then(|s| s.kiosk_pin.clone())
     }
 
     fn server_label(&self) -> String {
@@ -582,7 +596,7 @@ impl TacoApp {
         login::Look {
             cfg: &self.cfg,
             busy,
-            locked: self.kiosk.is_some() && self.setup_complete(),
+            locked: self.kiosk && self.setup_complete(),
             show_pin: self.pin_field_shown(),
             warning: (warning && self.unsafe_warning).then_some(self.cfg.text.unsafe_credentials.as_str()),
         }
@@ -591,7 +605,7 @@ impl TacoApp {
     fn login_screen(&mut self, ui: &mut egui::Ui) {
         let busy = matches!(self.screen, Screen::LoggingIn)
             .then(|| fill(&self.cfg.text.connecting, &[("server", &self.server_of(&self.form.server))]));
-        let (locked, show_pin) = (self.kiosk.is_some() && self.setup_complete(), self.pin_field_shown());
+        let (locked, show_pin) = (self.kiosk && self.setup_complete(), self.pin_field_shown());
         // spelled out instead of login_look() so only cfg is borrowed, not the form
         let look = login::Look {
             cfg: &self.cfg,
@@ -872,7 +886,7 @@ impl TacoApp {
 
     fn menu_popup(&mut self, ctx: &egui::Context) {
         let items = self.menu_items();
-        let touch = self.kiosk.is_some();
+        let touch = self.bar.is_some();
         let Some(menu) = &mut self.menu else { return };
         let t = &self.cfg.text;
 
@@ -939,6 +953,7 @@ impl TacoApp {
     fn dialogs(&mut self, ctx: &egui::Context) {
         let Some(dialog) = self.dialog.take() else { return };
         let stored_pin = self.kiosk_pin();
+        let keeps_setup = self.logout_keeps_setup();
         let t = &self.cfg.text;
         let (mut confirm, mut cancel) = (false, false);
 
@@ -951,7 +966,7 @@ impl TacoApp {
             ui.vertical_centered(|ui| {
                 if is_logout {
                     ui.heading(&t.logout_title);
-                    ui.label(&t.logout_body);
+                    ui.label(if keeps_setup { &t.logout_keeps_setup_body } else { &t.logout_body });
                     ui.add_space(8.0);
                 }
                 if stored_pin.is_some() {
@@ -1122,7 +1137,7 @@ impl eframe::App for TacoApp {
         // panels first, the central panel gets what they leave
         self.banners(ui);
         let mut kiosk_out = kiosk::Output::default();
-        if let Some(k) = &mut self.kiosk {
+        if let Some(k) = &mut self.bar {
             kiosk_out = k.show(ui, &self.cfg.text);
         }
         if let Some((pos, pivot)) = kiosk_out.menu {
@@ -1143,6 +1158,9 @@ impl eframe::App for TacoApp {
         self.menu_popup(&ctx);
         self.host_key_dialog(&ctx);
         self.dialogs(&ctx);
+        // the osk does the typing on phones, a focused login field would otherwise pop the system keyboard up over it
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        ctx.output_mut(|o| o.ime = None);
         if self.close {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }

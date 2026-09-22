@@ -23,6 +23,8 @@ description = "A taco wrap for TUI apps"    # I think i dont have to explain thi
 # license = "MIT"                           # your app's license, SPDX name, goes into the copyright file. default: unknown
 # homepage = "https://example.com"          # your sexy homepage
 # long_description = "Bla Bla Lorem Ipsum"  # default: generated from app.name and what gets wrapped
+# android_package = "net.example.app"       # what the apk is known by on android, never change it once its out. default: app.id with - as _
+                                            # android wants dot separated parts of letters, digits and _, each starting with a letter
 
 # ----------------------------------------------------------------------------
 # How you want the terminal to look
@@ -61,6 +63,7 @@ args = ["-l"]
 # changed_key_accept_after_secs = 0         # accept the changed key on its own after this long, 0 = never. for kiosks nobody can reach, not recommended otherwise.                            
 # retry_button = true                       # "retry now" on the lost, interrupted and changed key screens for impatient people
 # logout_button = true                      # "logout" on those screens (kiosk pin on a kiosk)
+# logout_keeps_setup = false                # true: logout only forgets the password, server and username stay filled in (and the kiosk pin)
 # connect_timeout_secs = 10
 # keepalive_secs = 5                        # poke the server after this much silence
 # keepalive_max = 3                         # this many unanswered pokes = connection interrupted
@@ -101,6 +104,7 @@ args = ["-l"]
 # ----------------------------------------------------------------------------
 [kiosk]
 # enabled = false                  # If true always kiosk. otherwise only when started with --kiosk
+                                   # on android the status bar and keyboard are always there, this adds the pin and the locked login
 # fullscreen = true                # If kiosk should try and force fullscreen.
 # keyboard_mode = "shrink"         # "shrink": the terminal gets smaller while the keyboard is up
                                    # "overlay": the keyboard floats over the terminal instead
@@ -196,6 +200,7 @@ args = ["-l"]
 # menu_exit = "Exit"                                  # on the login screen
 # logout_title = "Logout?"
 # logout_body = "This forgets the server and login, you'll have to set it up again."
+# logout_keeps_setup_body = "This forgets the password, you'll have to log in again."   # shown instead when logout_keeps_setup is on
 # logout_confirm = "Logout"
 # pin_title = "Enter PIN"
 # pin_wrong = "Wrong PIN"

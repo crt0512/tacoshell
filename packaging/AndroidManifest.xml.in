@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- make apk fills this in. NativeActivity is androids own, so theres no java in the apk (hasCode false),
+     just libtacoshell.so which it loads by lib_name and starts at android_main -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="@ANDROID_PACKAGE@"
+    android:versionCode="@VERSION_CODE@"
+    android:versionName="@VERSION@">
+
+    <uses-sdk android:minSdkVersion="@MIN_SDK@" android:targetSdkVersion="@TARGET_SDK@" />
+
+    <!-- ssh -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- fullscreen: hides the status bar, which would otherwise sit on top of the first terminal rows.
+         libs stay uncompressed in the apk and get loaded right out of it -->
+    <application
+        android:label="@LABEL@"
+        android:icon="@ICON_RES@"
+        android:hasCode="false"
+        android:extractNativeLibs="false"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+
+        <!-- configChanges: turning the phone or plugging in a keyboard resizes the window instead of
+             restarting the activity, which would drop the ssh session.
+             stateAlwaysHidden: the osk does the typing, the system keyboard stays down -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:windowSoftInputMode="stateAlwaysHidden">
+            <meta-data android:name="android.app.lib_name" android:value="tacoshell" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

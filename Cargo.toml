@@ -12,8 +12,7 @@ build = "build.rs"
 [workspace]
 
 [dependencies]
-eframe = "0.36"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image ={ version = "0.25", default-features = false, features = ["png"] }
 vte = "0.15"
 russh = "0.63"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
@@ -28,6 +27,37 @@ data-encoding = "2"
 # no ptys on phones and tablets, the local mode just doesnt exist there lol
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 portable-pty = "0.9"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+eframe = "0.36"
+
+# android is a NativeActivity (see make apk), eframe's screen reader bits only work with GameActivity so the defaults are out.
+# winit for the AndroidApp android_main gets handed, the logger because stdout/stderr go nowhere there, logcat is it.
+# the renderer comes from the features below
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "android-native-activity"] }
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+android_logger = "0.15"
+log = "0.4"
+# legacy only, see src/legacy
+egui-winit = { version = "0.36", default-features = false, optional = true }
+egui_glow = { version = "0.36", default-features = false, optional = true }
+glow = { version = "0.17", optional = true }
+libc = { version = "0.2", optional = true }
+
+[features]
+default = ["wgpu"]
+# eframe's renderer. desktop gets it from eframe's defaults either way, android through this
+wgpu = ["eframe/wgpu"]
+# android 4.0.3 and up (make apk-legacy): opengl es 2 through a runner of our own instead of eframe's,
+# and the few libc functions android 4 doesnt have yet. android only, and without wgpu (--no-default-features)
+legacy = ["dep:egui-winit", "dep:egui_glow", "dep:glow", "dep:libc"]
+
+# the app is a lib so android can load it as a .so, main.rs is the desktop front door.
+# make apk asks for the cdylib itself (cargo rustc --crate-type cdylib), desktop builds dont need to link one
+[lib]
+name = "tacoshell"
+path = "src/lib.rs"
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }

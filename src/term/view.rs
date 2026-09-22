@@ -1,9 +1,13 @@
 // drawing the grid with egui and turning pointer stuff into terminal mouse events
 
-use eframe::egui::{self, Color32, FontId, Rect, Vec2};
+use eframe::egui::{self, Color32, FontId, Pos2, Rect, Vec2};
 
 use super::input::{mouse_seq, MouseAction};
 use super::{Palette, TermGrid};
+
+/// how far a finger has to move (points) before a touch counts as a drag. touchscreens jitter, a kindle's by
+/// 10+ points on a plain tap, and a tap the app sees as a drag is a click it never gets
+const TOUCH_SLOP: f32 = 20.0;
 
 pub struct TermView {
     font: FontId,
@@ -12,6 +16,7 @@ pub struct TermView {
     last_mouse_button: Option<u8>, // track held mouse button for drag/release
     scroll_accumulator: f32,        // accumulate pixel scroll delta for discrete line events
     last_motion: Option<(u16, u16)>, // cell of the last hover/drag report, only report changes
+    touch_origin: Option<Pos2>,       // where a finger came down, until it moves further than TOUCH_SLOP
 }
 
 impl TermView {
@@ -22,6 +27,7 @@ impl TermView {
             last_mouse_button: None,
             scroll_accumulator: 0.0,
             last_motion: None,
+            touch_origin: None,
         }
     }
 
@@ -130,14 +136,19 @@ impl TermView {
             return out;
         }
         let (cw, ch) = (self.cell.x, self.cell.y);
-        let Some(pos) = input.pointer.latest_pos() else { return out };
+        // a finger is gone the same frame it lets go, theres no latest_pos then. interact_pos still knows where
+        let Some(pos) = input.pointer.latest_pos().or(input.pointer.interact_pos()) else { return out };
         if cw <= 0.0 || ch <= 0.0 {
             return out;
         }
         let sgr = grid.mouse_sgr;
         let inside = rect.contains(pos) && !covered;
-        let col = ((pos.x - rect.min.x) / cw).floor().clamp(0.0, grid.cols.saturating_sub(1) as f32) as u16;
-        let row = ((pos.y - rect.min.y) / ch).floor().clamp(0.0, grid.rows.saturating_sub(1) as f32) as u16;
+        let cell = |p: Pos2| {
+            let col = ((p.x - rect.min.x) / cw).floor().clamp(0.0, grid.cols.saturating_sub(1) as f32) as u16;
+            let row = ((p.y - rect.min.y) / ch).floor().clamp(0.0, grid.rows.saturating_sub(1) as f32) as u16;
+            (col, row)
+        };
+        let (col, row) = cell(pos);
 
         // ai fix ahead, had issues where buttons in lists would loose their selection/highlighting box caused by scrolling too fast + smooth scrolling (mainly on macos, linux was fine)
         // either i suck at googling or the internet is just lobotomized by now but i was unable to find a fix so yea ... llm was used sry
@@ -193,11 +204,22 @@ impl TermView {
             };
             if let Some(button) = pressed {
                 self.last_mouse_button = Some(button);
+                // the press is where the button is now, no motion report for the same cell after it
+                self.last_motion = Some((col, row));
+                self.touch_origin = input.any_touches().then_some(pos);
                 out.extend(mouse_seq(button, col, row, MouseAction::Press, sgr));
             }
         }
 
         if let Some(button) = self.last_mouse_button {
+            // a finger stays where it came down until it clearly moves, so a shaky tap is still a click
+            let (col, row) = match self.touch_origin {
+                Some(origin) if origin.distance(pos) < TOUCH_SLOP => cell(origin),
+                _ => {
+                    self.touch_origin = None;
+                    (col, row)
+                }
+            };
             // oui oui ratatui je suis machen le button nolonger pressing
             if input.pointer.any_released() {
                 self.last_mouse_button = None;
@@ -221,5 +243,6 @@ impl TermView {
         self.last_mouse_button = None;
         self.scroll_accumulator = 0.0;
         self.last_motion = None;
+        self.touch_origin = None;
     }
 }

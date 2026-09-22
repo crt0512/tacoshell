@@ -37,6 +37,7 @@ pub enum End {
     /// not one of the keys pinned in the config
     HostKeyMismatch { new: String },
     /// local: the program isnt next to us or in PATH
+    #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
     NotFound,
     /// anything else, server said no, pty trouble, ...
     Failed(String),
@@ -117,6 +118,7 @@ fn channel(wake: Waker) -> (EventTx, mpsc::Receiver<Event>) {
 }
 
 /// a session that failed before it started, so the ui only has one code path
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn dead(end: End, wake: Waker) -> Session {
     struct Nothing;
     impl Control for Nothing {

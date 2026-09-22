@@ -4,6 +4,7 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -49,14 +50,22 @@ impl Saved {
     }
 }
 
+/// where Store goes when theres no config dir, android hands the app a private one at startup
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+#[cfg(target_os = "android")]
+pub fn set_data_dir(dir: PathBuf) {
+    let _ = DATA_DIR.set(dir);
+}
+
 pub struct Store {
-    /// None where theres no config dir (some phones), then nothing sticks
+    /// None when theres neither a config dir nor a DATA_DIR, then nothing sticks
     dir: Option<PathBuf>,
 }
 
 impl Store {
     pub fn new(app_id: &str) -> Self {
-        Store { dir: dirs::config_dir().map(|d| d.join(app_id)) }
+        Store { dir: dirs::config_dir().or_else(|| DATA_DIR.get().cloned()).map(|d| d.join(app_id)) }
     }
 
     fn setup_file(&self) -> Option<PathBuf> {

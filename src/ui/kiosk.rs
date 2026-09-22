@@ -1,4 +1,5 @@
-// kiosk bits: status bar along the bottom (menu left, keyboard right) and the on screen keyboard itself, for touchscreens with nothing plugged in
+// kiosk bits: status bar along the bottom (menu left, keyboard right) and the on screen keyboard itself, for touchscreens with nothing plugged in.
+// phones and tablets always get these, kiosk or not
 
 use eframe::egui::{self, Align2, Pos2, RichText};
 

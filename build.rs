@@ -59,6 +59,16 @@ fn main() {
     if let Err(e) = cfg.validate() {
         fail(&path, &e);
     }
+    // what building for a phone needs on top
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if matches!(target_os.as_str(), "android" | "ios") && cfg.local.is_some() {
+        fail(&path, "[local] cant run on phones and tablets (no ptys there), build this one from an [ssh] config");
+    }
+    if target_os == "android"
+        && let Err(e) = cfg.android_package()
+    {
+        fail(&path, &e);
+    }
 
     if cfg.app.binary == schema::DEFAULT_BINARY {
         println!(
@@ -109,6 +119,8 @@ fn write_meta(cfg: &schema::Config, out_dir: &Path, icon_size: Option<&str>) {
         ("HOMEPAGE", p.homepage.clone().unwrap_or_default()),
         ("DEPENDS", cfg.local.as_ref().map(|l| l.depends.join(", ")).unwrap_or_default()),
         ("ICON_SIZE", icon_size.unwrap_or_default().to_string()),
+        // empty when app.id doesnt work for android, an android build already failed over that
+        ("ANDROID_PACKAGE", cfg.android_package().unwrap_or_default()),
     ];
     let text: String = lines.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
     fs::write(out_dir.join("meta.env"), &text).unwrap();

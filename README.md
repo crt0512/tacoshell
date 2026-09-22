@@ -14,13 +14,16 @@ It can wrap either:
 
 Everything it puts on screen (logo, text, colors, keyboard layout) comes from one TOML file that gets baked into the binary at build time. Made a new TUI app? = Just make a new TOML file and aslong as your TUI app isnt overly keyboard driven any Normie should be able to use it.
 
-## Building yout apps
+## Building your apps
+All of the following assume you're on Debian or Gentoo Linux, exception being MacOS and iOS ofcourse (once I figure that out) because they want to be special.
 
 ```bash
 make CONFIG=path/to/yourapps.toml            # release build
 make CONFIG=path/to/yourapps.toml install    # install it rawdog style
 make CONFIG=path/to/yourapps.toml deb        # Make a .deb (for debian/ubuntu)
 make CONFIG=path/to/yourapps.toml pkg        # Make a .pkg (for mac)
+make CONFIG=path/to/yourapps.toml apk        # Make an .apk (for android, ssh configs only)
+make CONFIG=path/to/yourapps.toml apk-legacy # Same for android 4.0.3 and up (targetsold 32 bit tablets)
 ```
 Without any config you get `tacoshell.toml`, which just wraps `sh` and lists all possible configs available to you.
 
@@ -34,6 +37,18 @@ Plain cargo works too with `TACOSHELL_CONFIG=path/to/yourapp.toml` if you dont w
   - For older systems or arm64 add `GLIBC=2.31` and/or `TARGET=aarch64-unknown-linux-gnu`. 
   - Thist however needs [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) (`cargo install cargo-zigbuild --locked`) and [zig](https://ziglang.org/download/) in your PATH, without them it just builds for your own machine. zig 0.16 complains about a "deprecated linker optimization setting" every build, ignore it
 - `--print-config` shows the baked config with all defaults, `--kiosk` starts kiosk mode
+
+### Android
+
+`make apk` wants the Android SDK with build-tools 35+, a platform and the NDK. Android Studio's SDK manager does all of that (the NDK is under SDK Tools), `~/Android/Sdk` is where it looks, `ANDROID_HOME` if yours is somewhere else. Plus `rustup target add aarch64-linux-android`.
+
+- Only `[ssh]` configs, phones have no ptys so a `[local]` one fails the build
+- `app.id` becomes the Android package name with `-` as `_`. Android wants every part to start with a letter, if yours doesnt (`net.512mb...`) set `packaging.android_package`. Never change it once the app is out, to Android that's a different app
+- Signed with Android Studio's debug key (made if you don't have one yet), `ANDROID_KEYSTORE=... ANDROID_KEY_ALIAS=...` for your own
+- arm64 only by default, `ANDROID_TARGETS="aarch64-linux-android armv7-linux-androideabi"` puts more in the same apk
+- The status bar and on screen keyboard are always there on a phone, `kiosk.enabled` adds the pin and the locked login
+- `adb install -r target/yourapp-1.0.0.apk` puts it on a phone, `adb logcat -s tacoshell` shows what it says
+- `make apk-legacy` is for Android 4.0.3 and up: 32 bit ARM only, OpenGL ES 2 through a small renderer of its own (`src/legacy`) instead of eframe's, plus stand ins for the few libc functions Android 4 doesn't have yet. `packaging/android-15-symbols.txt` is what Android 4.0.4 exports, the build fails if the app wants anything else. Tested on a Kindle Fire HD 8.9"
 
 ## Config
 
@@ -50,7 +65,7 @@ Technically only `[app]` and either `[local]` or `[ssh]` are required (not both 
 - **Kiosk mode**: fullscreen for touchscreens, with a built in on screen keyboard and an optional PIN so randos walking by can't log it out
 - **Local mode**: if the program isn't installed the app says so (put install hints in `text.program_missing`), and `local.depends` ends up in the .deb's dependencies
 
-Linux is what it's built and used on. macOS should work (that's what `make pkg` is for) but isn't really tested, Windows has no build or installer yet, and Android/iOS will definetly for now only compile with SSH mode (if at all), havent tested that yet though.
+Linux is what it's built and used on. macOS should work (that's what `make pkg` is for) but isn't really tested, Windows has no build or installer yet. Android builds with `make apk` (SSH mode only) but hasnt seen a real phone yet, iOS doesnt build at all.
 
 ## Hacking on it
 
