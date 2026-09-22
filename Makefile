@@ -72,6 +72,7 @@ OUT      := target/$(if $(TARGET),$(TARGET)/)release
 BIN      := $(OUT)/tacoshell$(if $(findstring windows,$(TARGET)),.exe)
 META     := $(OUT)/tacoshell-meta.env
 ICON     := $(OUT)/tacoshell-icon.png
+MAC_ICON := $(dir $(CONFIG))logo.icns
 PKG_ENV  := $(OUT)/tacoshell-package.env
 DEB_ROOT := $(OUT)/deb-root
 MAC_ROOT := $(OUT)/mac-root
@@ -236,8 +237,10 @@ _mac_app:
 	@test -n "$(APP_DEST)" || (echo "APP_DEST not set" && exit 1)
 	install -d "$(APP_DEST)/$(call meta,NAME).app/Contents/MacOS" "$(APP_DEST)/$(call meta,NAME).app/Contents/Resources"
 	install -m 755 $(BIN) "$(APP_DEST)/$(call meta,NAME).app/Contents/MacOS/$(call meta,BINARY)"
-	@# icns out of the baked in png, only if there is one
-	@if [ -f $(ICON) ]; then \
+	@# use the app's checked-in macos icon when available, otherwise make one from the baked-in png
+	@if [ -f "$(MAC_ICON)" ]; then \
+		install -m 644 "$(MAC_ICON)" "$(APP_DEST)/$(call meta,NAME).app/Contents/Resources/icon.icns"; \
+	elif [ -f "$(ICON)" ]; then \
 		rm -rf $(OUT)/icon.iconset && mkdir $(OUT)/icon.iconset && \
 		for s in 16 32 128 256; do \
 			sips -z $$s $$s $(ICON) --out $(OUT)/icon.iconset/icon_$${s}x$${s}.png >/dev/null; \

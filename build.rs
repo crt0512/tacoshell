@@ -38,7 +38,29 @@ fn main() {
 
     let icon_out = out_dir.join("icon.png");
     let mut icon_size = String::new();
-    let has_icon = match cfg.app.icon.take() {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let mac_icon = base.join("logo.icns");
+    let has_icon = if target_os == "macos" && mac_icon.is_file() {
+        println!("cargo:rerun-if-changed={}", mac_icon.display());
+        let result = std::process::Command::new("sips")
+            .args(["-s", "format", "png"])
+            .arg(&mac_icon)
+            .args(["--out"])
+            .arg(&icon_out)
+            .output()
+            .unwrap_or_else(|e| fail(&mac_icon, &format!("cant run sips: {e}")));
+        if !result.status.success() {
+            fail(
+                &mac_icon,
+                &format!(
+                    "sips failed: {}",
+                    String::from_utf8_lossy(&result.stderr).trim()
+                ),
+            );
+        }
+        true
+    } else {
+        match cfg.app.icon.take() {
         Some(file) => {
             let file = base.join(file);
             println!("cargo:rerun-if-changed={}", file.display());
@@ -54,13 +76,13 @@ fn main() {
             true
         }
         None => false,
+        }
     };
 
     if let Err(e) = cfg.validate() {
         fail(&path, &e);
     }
     // what building for a phone needs on top
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if matches!(target_os.as_str(), "android" | "ios") && cfg.local.is_some() {
         fail(&path, "[local] cant run on phones and tablets (no ptys there), build this one from an [ssh] config");
     }
