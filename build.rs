@@ -106,6 +106,10 @@ fn main() {
 
     fs::write(out_dir.join("config.toml"), toml::to_string(&cfg).unwrap()).unwrap();
     write_meta(&cfg, &out_dir, has_icon.then_some(icon_size.as_str()));
+    // the exe's icon and version info, what explorer and task manager show
+    if target_os == "windows" {
+        windows_resources(&cfg, &out_dir, has_icon.then_some(icon_out.as_path()));
+    }
 
     let icon = if has_icon {
         "Some(include_bytes!(concat!(env!(\"OUT_DIR\"), \"/icon.png\")))"
@@ -155,6 +159,91 @@ fn write_meta(cfg: &schema::Config, out_dir: &Path, icon_size: Option<&str>) {
             Some(_) => fs::copy(out_dir.join("icon.png"), &icon).map(|_| ()),
             None => fs::remove_file(&icon).or(Ok(())),
         };
+    }
+}
+
+/// what explorer shows for the exe: its icon and the version tab. an .rc compiled to an object that gets linked into the
+/// bin (not the .so, not the tests). zig rc does that (a cross build from linux has zig anyway), mingw's windres or
+/// microsoft's rc.exe otherwise. with none of them the exe still works, it just has no icon, so thats a warning not an error
+fn windows_resources(cfg: &schema::Config, out_dir: &Path, icon_png: Option<&Path>) {
+    // "" is a quote inside an rc string, backslashes are escapes
+    let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\"\""));
+    let version = cfg.app.version.clone().unwrap_or_else(|| env::var("CARGO_PKG_VERSION").unwrap());
+    // FILEVERSION wants four numbers, whatever digits the version has go there ("1.2.3-beta" -> 1,2,3,0)
+    let mut nums = [0u16; 4];
+    for (n, part) in nums.iter_mut().zip(version.split(|c: char| !c.is_ascii_digit()).filter(|p| !p.is_empty())) {
+        *n = part.parse().unwrap_or(0);
+    }
+    let nums = format!("{},{},{},{}", nums[0], nums[1], nums[2], nums[3]);
+
+    let mut rc = String::new();
+    if let Some(png) = icon_png {
+        // an .ico is a little directory in front of the images, and since vista an image may just be a png as is.
+        // 6 byte header, one 16 byte entry, then the png. width and height are single bytes, 0 means 256 (or more)
+        let bytes = fs::read(png).unwrap();
+        let dim = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+        let side = |d: u32| if d >= 256 { 0u8 } else { d as u8 };
+        let mut ico = Vec::with_capacity(22 + bytes.len());
+        ico.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+        ico.extend_from_slice(&[side(dim(16)), side(dim(20)), 0, 0, 1, 0, 32, 0]);
+        ico.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+        ico.extend_from_slice(&22u32.to_le_bytes());
+        ico.extend_from_slice(&bytes);
+        fs::write(out_dir.join("icon.ico"), ico).unwrap();
+        // the lowest id is the one explorer picks for the file
+        rc.push_str("1 ICON \"icon.ico\"\n");
+    }
+    let description = if cfg.app.description.is_empty() { &cfg.app.name } else { &cfg.app.description };
+    // FILEOS 0x40004 = VOS_NT_WINDOWS32, FILETYPE 1 = VFT_APP, 0x409/1200 = english, unicode. the block name has to match
+    rc.push_str(&format!(
+        "1 VERSIONINFO\nFILEVERSION {nums}\nPRODUCTVERSION {nums}\nFILEOS 0x40004\nFILETYPE 1\nBEGIN\n\
+         BLOCK \"StringFileInfo\"\nBEGIN\nBLOCK \"040904B0\"\nBEGIN\n\
+         VALUE \"ProductName\", {name}\nVALUE \"FileDescription\", {desc}\n\
+         VALUE \"ProductVersion\", {ver}\nVALUE \"FileVersion\", {ver}\n\
+         VALUE \"InternalName\", {bin}\nVALUE \"OriginalFilename\", {exe}\n\
+         END\nEND\nBLOCK \"VarFileInfo\"\nBEGIN\nVALUE \"Translation\", 0x409, 1200\nEND\nEND\n",
+        name = quote(&cfg.app.name),
+        desc = quote(description),
+        ver = quote(&version),
+        bin = quote(&cfg.app.binary),
+        exe = quote(&format!("{}.exe", cfg.app.binary)),
+    ));
+    fs::write(out_dir.join("app.rc"), rc).unwrap();
+
+    // whichever resource compiler is around. all run in OUT_DIR so "icon.ico" in the rc resolves, and everything gets
+    // the target from the triple so a cross build doesnt end up with an object for the build machine
+    let target = env::var("TARGET").unwrap();
+    // there or not is all that matters, rc.exe has no --version to ask. a broken one fails below, with its stderr
+    let have = |tool: &str| std::process::Command::new(tool).arg("--version").output().is_ok();
+    // mingw calls 32 bit i686 where rust says x86
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let windres = format!("{}-w64-mingw32-windres", if arch == "x86" { "i686" } else { &arch });
+    let (mut cmd, object) = if have("zig") {
+        let mut c = std::process::Command::new("zig");
+        c.args(["rc", "/:output-format", "coff", "/:target", &target, "/c", "65001", "/fo", "app.o", "app.rc"]);
+        (c, "app.o")
+    } else if let Some(windres) = [windres.as_str(), "windres"].into_iter().find(|t| have(t)) {
+        let mut c = std::process::Command::new(windres);
+        c.args(["-c", "65001", "-O", "coff", "-o", "app.o", "app.rc"]);
+        (c, "app.o")
+    } else if have("rc") {
+        // microsoft's, makes a .res and link.exe takes that as it is
+        let mut c = std::process::Command::new("rc");
+        c.args(["/nologo", "/c", "65001", "/fo", "app.res", "app.rc"]);
+        (c, "app.res")
+    } else {
+        println!("cargo:warning=no resource compiler (zig, {windres} or rc.exe), the exe gets no icon and no version info");
+        return;
+    };
+    match cmd.current_dir(out_dir).output() {
+        Ok(o) if o.status.success() => {
+            println!("cargo:rustc-link-arg-bins={}", out_dir.join(object).display());
+        }
+        Ok(o) => println!(
+            "cargo:warning=resource compiler failed, the exe gets no icon and no version info: {}",
+            String::from_utf8_lossy(&o.stderr).trim().replace('\n', " ")
+        ),
+        Err(e) => println!("cargo:warning=cant run the resource compiler, the exe gets no icon and no version info: {e}"),
     }
 }
 

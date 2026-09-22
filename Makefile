@@ -1,11 +1,14 @@
 # tacoshell makefile
 #
-#   make [CONFIG=path/to/app.toml] [build|install|uninstall|deb|pkg|apk|apk-legacy|clean]
+#   make [CONFIG=path/to/app.toml] [build|install|uninstall|deb|pkg|win|apk|apk-legacy|clean]
 #
 #   CONFIG   the app to build, default tacoshell.toml
 #   TARGET   rust target triple to build for, default this machine
 #            (aarch64-unknown-linux-gnu, x86_64-pc-windows-gnu, ...)
 #   GLIBC    oldest glibc the linux build should run on, like 2.31
+#
+# make win builds for x86_64-pc-windows-gnu unless TARGET is another windows triple (or this is a windows machine).
+# zig links it from linux, nasm (apt install nasm) assembles the ssh crypto, zig rc puts the icon on the exe (build.rs)
 #
 # make apk takes its own, TARGET and GLIBC dont go there:
 #   ANDROID_TARGETS  rust targets that go in the apk, default aarch64-linux-android (every phone of the last years).
@@ -76,6 +79,7 @@ MAC_ICON := $(dir $(CONFIG))logo.icns
 PKG_ENV  := $(OUT)/tacoshell-package.env
 DEB_ROOT := $(OUT)/deb-root
 MAC_ROOT := $(OUT)/mac-root
+WIN_ROOT := $(OUT)/win-root
 APK_DIR  := $(OUT)/apk
 FILL     := sh packaging/fill.sh
 
@@ -140,7 +144,7 @@ endef
 APK_SIGN = $(if $(ANDROID_KEYSTORE),--ks $(ANDROID_KEYSTORE) $(if $(ANDROID_KEY_ALIAS),--ks-key-alias $(ANDROID_KEY_ALIAS)) \
 	$(if $(ANDROID_KEYSTORE_PASS),--ks-pass env:ANDROID_KEYSTORE_PASS),--ks $(DEBUG_KEYSTORE) --ks-key-alias androiddebugkey --ks-pass pass:android)
 
-.PHONY: all build install uninstall deb pkg apk apk-legacy clean _package_env _desktop _mac_app _apk
+.PHONY: all build install uninstall deb pkg win apk apk-legacy clean _package_env _desktop _mac_app _win _apk
 
 all: build
 
@@ -249,6 +253,30 @@ _mac_app:
 		iconutil -c icns $(OUT)/icon.iconset -o "$(APP_DEST)/$(call meta,NAME).app/Contents/Resources/icon.icns"; \
 	fi
 	$(FILL) $(PKG_ENV) packaging/Info.plist.in > "$(APP_DEST)/$(call meta,NAME).app/Contents/Info.plist"
+
+# ---- windows ----
+
+# a portable build, no installer yet: a zip with the exe and a kiosk launcher, unzip anywhere and run.
+# the ssh crypto (aws-lc) assembles its x86_64 code with nasm, rustup target add x86_64-pc-windows-gnu for the rest
+
+# any windows triple in TARGET, else x86_64-pc-windows-gnu (what zig links from linux), on a windows machine its own
+WIN_TARGET ?= $(or $(filter %-windows-gnu %-windows-gnullvm %-windows-msvc,$(TARGET)),$(if $(findstring windows,$(HOST)),$(HOST),x86_64-pc-windows-gnu))
+WIN_NAME    = $(call meta,BINARY)-$(call meta,VERSION)-windows-$(firstword $(subst -, ,$(TARGET)))
+
+win:
+	@case "$(WIN_TARGET)" in x86_64-*) command -v nasm >/dev/null 2>&1 || [ -n "$$AWS_LC_SYS_PREBUILT_NASM" ] || \
+		{ echo "no nasm, the ssh crypto (aws-lc) needs it for its x86_64 windows assembly: apt install nasm (or AWS_LC_SYS_PREBUILT_NASM=1 to take the objects it ships)" >&2; exit 1; };; esac
+	$(MAKE) --no-print-directory _win TARGET=$(WIN_TARGET)
+
+_win: build
+	rm -rf $(WIN_ROOT)
+	install -d $(WIN_ROOT)/$(WIN_NAME)
+	install -m 755 $(BIN) $(WIN_ROOT)/$(WIN_NAME)/$(call meta,BINARY).exe
+	@# what the desktop entry's kiosk action is on linux. cmd wants crlf
+	$(FILL) $(META) packaging/kiosk.cmd.in | sed 's/$$/\r/' > $(WIN_ROOT)/$(WIN_NAME)/$(call meta,BINARY)-kiosk.cmd
+	rm -f target/$(WIN_NAME).zip
+	cd $(WIN_ROOT) && zip -q -r -X $(abspath target)/$(WIN_NAME).zip $(WIN_NAME)
+	@echo "built target/$(WIN_NAME).zip (portable: unzip it, run $(call meta,BINARY).exe)"
 
 # ---- android ----
 

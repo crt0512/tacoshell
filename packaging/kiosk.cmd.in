@@ -1,0 +1,3 @@
+@echo off
+rem @NAME@ in kiosk mode: fullscreen, status bar and the on screen keyboard
+start "" "%~dp0@BINARY@.exe" --kiosk

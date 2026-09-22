@@ -22,6 +22,7 @@ make CONFIG=path/to/yourapps.toml            # release build
 make CONFIG=path/to/yourapps.toml install    # install it rawdog style
 make CONFIG=path/to/yourapps.toml deb        # Make a .deb (for debian/ubuntu)
 make CONFIG=path/to/yourapps.toml pkg        # Make a .pkg (for mac)
+make CONFIG=path/to/yourapps.toml win        # Make a portable .zip for 64 bit windows (no installer yet)
 make CONFIG=path/to/yourapps.toml apk        # Make an .apk (for android, ssh configs only)
 make CONFIG=path/to/yourapps.toml apk-legacy # Same for android 4.0.3 and up (targetsold 32 bit tablets)
 ```
@@ -37,6 +38,16 @@ Plain cargo works too with `TACOSHELL_CONFIG=path/to/yourapp.toml` if you dont w
   - For older systems or arm64 add `GLIBC=2.31` and/or `TARGET=aarch64-unknown-linux-gnu`. 
   - Thist however needs [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) (`cargo install cargo-zigbuild --locked`) and [zig](https://ziglang.org/download/) in your PATH, without them it just builds for your own machine. zig 0.16 complains about a "deprecated linker optimization setting" every build, ignore it
 - `--print-config` shows the baked config with all defaults, `--kiosk` starts kiosk mode
+
+### Windows
+
+`make win` cross compiles from Linux and zips up a portable build: `target/yourapp-1.0.0-windows-x86_64.zip` with the exe and a `yourapp-kiosk.cmd` that starts it in kiosk mode. Unzip anywhere and run, no installer yet. It wants:
+
+- `rustup target add x86_64-pc-windows-gnu`
+- cargo-zigbuild and zig, same as the other cross builds. zig also compiles the exe's icon and version info (`zig rc`, see build.rs)
+- `nasm` (`apt install nasm`), the SSH crypto (aws-lc) assembles its x86_64 code with it. `AWS_LC_SYS_PREBUILT_NASM=1` takes the objects the crate ships instead
+
+The exe is a windows gui program (no console window behind it), `--help`, `--version` and the rest still print when it's run from a terminal. Meant for 64 bit Windows 10 and up, `wine yourapp.exe --version` is as far as it has been tested.
 
 ### Android
 
@@ -65,7 +76,7 @@ Technically only `[app]` and either `[local]` or `[ssh]` are required (not both 
 - **Kiosk mode**: fullscreen for touchscreens, with a built in on screen keyboard and an optional PIN so randos walking by can't log it out
 - **Local mode**: if the program isn't installed the app says so (put install hints in `text.program_missing`), and `local.depends` ends up in the .deb's dependencies
 
-Linux is what it's built and used on. macOS should work (that's what `make pkg` is for) but isn't really tested, Windows has no build or installer yet. Android builds with `make apk` (SSH mode only) but hasnt seen a real phone yet, iOS doesnt build at all.
+Linux is what it's built and used on. macOS should work (that's what `make pkg` is for) but isn't really tested, Windows builds with `make win` (a portable zip, no installer yet) but hasnt run on a real windows box yet. Android builds with `make apk` (SSH mode only) but hasnt seen a real phone yet, iOS doesnt build at all.
 
 ## Hacking on it
 
