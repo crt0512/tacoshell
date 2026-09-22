@@ -75,15 +75,22 @@ pub fn main() -> eframe::Result<()> {
         }
     }
 
-    // guess the window size from the cell count, the real cell size is only known after the first frame
+    // the size the window had last time, unless the config fixes it. a kiosk looks the same every launch
     let t = &cfg.terminal;
-    let est_width = t.cols as f32 * t.font_size * 0.61 + 20.0;
-    let est_height = t.rows as f32 * t.font_size * 1.29 + 20.0;
+    let last = if remember_window_size(&cfg, kiosk) { state::Store::new(&cfg.app.id).load_window() } else { None };
+    let size = match last {
+        Some(last) => [last.width, last.height],
+        // guess the window size from the cell count, the real cell size is only known after the first frame
+        None => [
+            t.cols() as f32 * t.font_size * 0.61 + 20.0,
+            t.rows() as f32 * t.font_size * 1.29 + 20.0,
+        ],
+    };
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(&cfg.app.name)
         .with_app_id(&cfg.app.id)
-        .with_inner_size([est_width, est_height])
+        .with_inner_size(size)
         .with_min_inner_size([300.0, 200.0]);
     if let Some(icon) = config::icon_png().and_then(load_icon) {
         viewport = viewport.with_icon(icon);
@@ -144,6 +151,12 @@ fn run(cfg: config::Config, kiosk: bool, options: eframe::NativeOptions) -> efra
     }
     #[cfg(not(all(target_os = "android", feature = "legacy")))]
     eframe::run_native(&name, options, creator)
+}
+
+/// whether the window size carries over from one launch to the next. not when the config gives terminal.cols/rows,
+/// not in kiosk mode, and not on phones where the window is the screen
+fn remember_window_size(cfg: &config::Config, kiosk: bool) -> bool {
+    !cfg.terminal.fixed_size() && !kiosk && !cfg!(any(target_os = "ios", target_os = "android"))
 }
 
 fn load_icon(png: &[u8]) -> Option<egui::IconData> {

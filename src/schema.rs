@@ -73,25 +73,45 @@ pub struct Packaging {
 #[serde(default, deny_unknown_fields)]
 pub struct Terminal {
     pub font_size: f32,
-    /// starting window size in cells, the window can be resized after
-    /// todo : should make use eframes ability to rememeber window size between sessions
-    pub cols: u16,
-    pub rows: u16,
+    /// starting window size in cells, the window can be resized after. set either one and every launch starts
+    /// at it, leave both out and the window comes back at the size it had last time (DEFAULT_COLS x DEFAULT_ROWS the first time)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cols: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<u16>,
     pub foreground: String,
     pub background: String,
     pub term: String,
 }
 
+pub const DEFAULT_COLS: u16 = 120;
+pub const DEFAULT_ROWS: u16 = 35;
+
 impl Default for Terminal {
     fn default() -> Self {
         Terminal {
             font_size: 14.0,
-            cols: 120,
-            rows: 35,
+            cols: None,
+            rows: None,
             foreground: "#cccccc".into(),
             background: "#181818".into(),
             term: "xterm-256color".into(),
         }
+    }
+}
+
+impl Terminal {
+    /// the config says how big the window starts, so the last size isnt remembered
+    pub fn fixed_size(&self) -> bool {
+        self.cols.is_some() || self.rows.is_some()
+    }
+
+    pub fn cols(&self) -> u16 {
+        self.cols.unwrap_or(DEFAULT_COLS)
+    }
+
+    pub fn rows(&self) -> u16 {
+        self.rows.unwrap_or(DEFAULT_ROWS)
     }
 }
 
@@ -582,7 +602,7 @@ impl Config {
         if !(6.0..=72.0).contains(&t.font_size) {
             return Err("terminal.font_size should be between 6 and 72".into());
         }
-        if t.cols < 20 || t.rows < 5 {
+        if t.cols() < 20 || t.rows() < 5 {
             return Err("terminal.cols/rows too small".into());
         }
         parse_color(&t.foreground)?;

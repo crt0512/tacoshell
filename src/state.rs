@@ -1,10 +1,11 @@
-// what the setup screen remembers between launches, until logout.
+// what the setup screen remembers between launches, until logout. and the window size, logout or not.
 // no passwords in here, those go through creds.rs
 
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -58,6 +59,7 @@ pub fn set_data_dir(dir: PathBuf) {
     let _ = DATA_DIR.set(dir);
 }
 
+#[derive(Clone)]
 pub struct Store {
     /// None when theres neither a config dir nor a DATA_DIR, then nothing sticks
     dir: Option<PathBuf>,
@@ -97,6 +99,87 @@ impl Store {
         if let Some(file) = self.setup_file() {
             let _ = fs::remove_file(file);
         }
+    }
+
+    /// the window size from last time, survives logout
+    fn window_file(&self) -> Option<PathBuf> {
+        Some(self.dir.as_ref()?.join("window.toml"))
+    }
+
+    pub fn load_window(&self) -> Option<WindowSize> {
+        let text = fs::read_to_string(self.window_file()?).ok()?;
+        let size: WindowSize = toml::from_str(&text).ok()?;
+        // hand edited nonsense would make a window of no size at all
+        let sane = |v: f32| v.is_finite() && v >= 1.0;
+        (sane(size.width) && sane(size.height)).then_some(size)
+    }
+
+    pub fn save_window(&self, size: WindowSize) -> io::Result<()> {
+        let Some(file) = self.window_file() else { return Ok(()) };
+        let text = toml::to_string(&size).map_err(io::Error::other)?;
+        write_private(&file, &text)
+    }
+}
+
+/// inner size of the window in points
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WindowSize {
+    pub width: f32,
+    pub height: f32,
+}
+
+/// how long the window has to stay one size before that goes to disk, dragging a corner is a lot of sizes
+const WINDOW_SETTLE: Duration = Duration::from_millis(500);
+
+/// writes the window size down for the next launch, once it stops changing
+pub struct WindowMemory {
+    store: Store,
+    /// on disk already, or the size the window started at. None until the first look
+    kept: Option<WindowSize>,
+    /// a size that isnt kept yet, and since when the window has it
+    latest: Option<(WindowSize, Instant)>,
+}
+
+impl WindowMemory {
+    pub fn new(store: Store) -> Self {
+        WindowMemory { store, kept: None, latest: None }
+    }
+
+    /// the window's size this frame, None while its fullscreen, maximized or minimized (thats not the size to come back to).
+    /// returns how soon it wants another look, when theres a size waiting to settle
+    pub fn seen(&mut self, size: Option<WindowSize>, now: Instant) -> Option<Duration> {
+        let size = size?;
+        let Some(kept) = self.kept else {
+            // where the window starts isnt news, the next launch would start there anyway
+            self.kept = Some(size);
+            return None;
+        };
+        if size == kept {
+            self.latest = None;
+            return None;
+        }
+        let since = match self.latest {
+            Some((latest, since)) if latest == size => since,
+            _ => {
+                self.latest = Some((size, now));
+                now
+            }
+        };
+        let left = WINDOW_SETTLE.saturating_sub(now - since);
+        if left.is_zero() {
+            self.flush();
+            return None;
+        }
+        Some(left)
+    }
+
+    /// onto disk with whatever hasnt settled yet, for when the app quits
+    pub fn flush(&mut self) {
+        let Some((size, _)) = self.latest.take() else { return };
+        if let Err(e) = self.store.save_window(size) {
+            eprintln!("cant save the window size: {e}");
+        }
+        self.kept = Some(size);
     }
 }
 
@@ -159,5 +242,68 @@ mod tests {
         assert!(!check_pin(&stored, "4321"));
         assert!(!stored.contains("1234$"), "salt missing");
         assert_ne!(hash_pin("1234"), stored, "same salt twice");
+    }
+
+    fn temp_store(name: &str) -> Store {
+        let dir = std::env::temp_dir().join(format!("tacoshell-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        Store { dir: Some(dir) }
+    }
+
+    #[test]
+    fn window_size_on_disk() {
+        let store = temp_store("window-disk");
+        assert_eq!(store.load_window(), None);
+        let size = WindowSize { width: 812.5, height: 600.0 };
+        store.save_window(size).unwrap();
+        assert_eq!(store.load_window(), Some(size));
+        // logout forgets the setup, not the window
+        store.clear();
+        assert_eq!(store.load_window(), Some(size));
+        fs::write(store.window_file().unwrap(), "width = 0.0\nheight = 600.0\n").unwrap();
+        assert_eq!(store.load_window(), None);
+        fs::write(store.window_file().unwrap(), "garbage").unwrap();
+        assert_eq!(store.load_window(), None);
+        let _ = fs::remove_dir_all(store.dir.unwrap());
+    }
+
+    #[test]
+    fn window_size_settles() {
+        let store = temp_store("window-settle");
+        let mut memory = WindowMemory::new(store.clone());
+        let t0 = Instant::now();
+        let at = |ms| t0 + Duration::from_millis(ms);
+        let (start, dragged, done) = (
+            WindowSize { width: 800.0, height: 600.0 },
+            WindowSize { width: 900.0, height: 650.0 },
+            WindowSize { width: 1000.0, height: 700.0 },
+        );
+
+        // the size it started at doesnt get written
+        assert_eq!(memory.seen(Some(start), at(0)), None);
+        assert_eq!(memory.seen(Some(start), at(2000)), None);
+        assert_eq!(store.load_window(), None);
+
+        // mid drag nothing is written, it waits for the window to sit still
+        assert_eq!(memory.seen(Some(dragged), at(2000)), Some(WINDOW_SETTLE));
+        assert!(memory.seen(Some(done), at(2100)).is_some());
+        assert!(memory.seen(Some(done), at(2400)).is_some());
+        assert_eq!(store.load_window(), None);
+        assert_eq!(memory.seen(Some(done), at(2600)), None);
+        assert_eq!(store.load_window(), Some(done));
+
+        // fullscreen and co dont count, and quitting keeps what hadnt settled yet
+        assert_eq!(memory.seen(None, at(3000)), None);
+        assert!(memory.seen(Some(start), at(3000)).is_some());
+        assert_eq!(memory.seen(None, at(4000)), None);
+        memory.flush();
+        assert_eq!(store.load_window(), Some(start));
+
+        // resized and put back before it settled: nothing to write
+        assert!(memory.seen(Some(done), at(5000)).is_some());
+        assert_eq!(memory.seen(Some(start), at(5100)), None);
+        memory.flush();
+        assert_eq!(store.load_window(), Some(start));
+        let _ = fs::remove_dir_all(store.dir.unwrap());
     }
 }

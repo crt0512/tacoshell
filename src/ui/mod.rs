@@ -22,7 +22,7 @@ use crate::config::{self, fill, Config, LocalOnExit, MenuTrigger, SshOnExit};
 use crate::creds::{self, CredentialStore, Secret};
 use crate::schema::{split_server, DEFAULT_BINARY, DEFAULT_BINARY_WARNING};
 use crate::session::{self, End, Event, HostKeyQuestion, KeyChange, Session, Waker};
-use crate::state::{self, Saved, Store};
+use crate::state::{self, Saved, Store, WindowMemory, WindowSize};
 use crate::term::input::{ctrl_char_byte, ctrl_key_byte, named_key_bytes, special_key_bytes};
 use crate::term::view::TermView;
 use crate::term::{Palette, TermGrid};
@@ -124,6 +124,8 @@ pub struct TacoApp {
     screen: Screen,
 
     store: Store,
+    /// keeps the window size for the next launch, None when it isnt remembered (see remember_window_size)
+    window: Option<WindowMemory>,
     /// the setup that worked last, None until the first login (and after logout).
     /// full values while running, whats on disk depends on the remember checkboxes
     saved: Option<Saved>,
@@ -188,11 +190,12 @@ impl TacoApp {
             },
             rt,
             wake,
-            grid: TermGrid::new(cfg.terminal.rows as usize, cfg.terminal.cols as usize),
+            grid: TermGrid::new(cfg.terminal.rows() as usize, cfg.terminal.cols() as usize),
             parser: vte::Parser::new(),
             view: TermView::new(cfg.terminal.font_size),
             session: None,
             screen: Screen::Login,
+            window: crate::remember_window_size(&cfg, kiosk).then(|| WindowMemory::new(store.clone())),
             store,
             saved,
             password: None,
@@ -1119,12 +1122,26 @@ impl TacoApp {
             _ => {}
         }
     }
+
+    fn remember_window(&mut self, ctx: &egui::Context) {
+        let Some(memory) = &mut self.window else { return };
+        let size = ctx.input(|i| {
+            let v = i.viewport();
+            let stretched = [v.fullscreen, v.maximized, v.minimized].into_iter().any(|s| s == Some(true));
+            let rect = v.inner_rect.filter(|_| !stretched)?;
+            Some(WindowSize { width: rect.width(), height: rect.height() })
+        });
+        if let Some(wait) = memory.seen(size, Instant::now()) {
+            ctx.request_repaint_after(wait);
+        }
+    }
 }
 
 impl eframe::App for TacoApp {
     // runs even while the window is hidden, so output never piles up
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump(ctx);
+        self.remember_window(ctx);
         if self.close {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -1163,6 +1180,13 @@ impl eframe::App for TacoApp {
         ctx.output_mut(|o| o.ime = None);
         if self.close {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    // a resize right before quitting hasnt settled yet
+    fn on_exit(&mut self) {
+        if let Some(memory) = &mut self.window {
+            memory.flush();
         }
     }
 }

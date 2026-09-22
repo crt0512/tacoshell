@@ -15,8 +15,8 @@ description = "An example app"
 
 [terminal]
 font_size = 14.0
-cols = 120                         # starting window size in cells
-rows = 35
+# cols = 120                       # fixed starting window size in cells. leave out: whatever size it had last time
+# rows = 35
 foreground = "#cccccc"
 background = "#181818"
 term = "xterm-256color"            # TERM the app gets to see

@@ -31,8 +31,9 @@ description = "A taco wrap for TUI apps"    # I think i dont have to explain thi
 # ----------------------------------------------------------------------------
 [terminal]
 # font_size = 14.0
-# cols = 120                                # starting window size in cells, resizable after
-# rows = 35
+# cols = 120                                # fixed starting window size in cells, resizable after. setting either one fixes it
+# rows = 35                                 # leave both out: the window comes back at the size it had last time (120x35 the first time),
+                                            # kept in ~/.config/<id>/window.toml. kiosk mode always starts at this size
 # foreground = "#cccccc"                  # default text color, #rrggbb
 # background = "#181818"                  # default background color
 # term = "xterm-256color"                   # TERM the wrapped app gets
