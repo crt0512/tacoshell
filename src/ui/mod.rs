@@ -784,14 +784,21 @@ impl TacoApp {
                         }
                         if !buttons.is_empty() {
                             ui.add_space(10.0);
+                            let key = Id::new("taco_status_buttons");
+                            let last: Option<f32> = ui.ctx().data(|d| d.get_temp(key));
                             ui.horizontal_wrapped(|ui| {
-                                // horizontal_wrapped doesnt center, so pad the row by hand
-                                let widths: f32 = buttons.iter().map(|(_, l)| l.len() as f32 * 9.0 + 36.0).sum();
-                                ui.add_space(((ui.available_width() - widths) / 2.0).max(0.0));
-                                for (action, label) in &buttons {
-                                    if ui.button(RichText::new(label).size(16.0)).clicked() {
-                                        clicked = Some(*action);
+                                ui.add_space(((ui.available_width() - last.unwrap_or(0.0)) / 2.0).max(0.0));
+                                let row = ui.scope(|ui| {
+                                    for (action, label) in &buttons {
+                                        if ui.button(RichText::new(label).size(16.0)).clicked() {
+                                            clicked = Some(*action);
+                                        }
                                     }
+                                });
+                                let width = row.response.rect.width();
+                                if last != Some(width) {
+                                    ui.ctx().data_mut(|d| d.insert_temp(key, width));
+                                    ui.ctx().request_discard("status card buttons measured");
                                 }
                             });
                         }
